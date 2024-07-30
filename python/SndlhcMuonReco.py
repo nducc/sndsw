@@ -1,10 +1,26 @@
 import ROOT
 import numpy as np
-import scipy.ndimage
 from array import array
 import xml.etree.ElementTree as ET
-import matplotlib.pyplot as plt
 import shipunit as unit
+
+from hough import hough
+
+
+# def display_track(track):
+#     """Displays the genfit event display (trying to avoid segmentation violation)"""
+#     display = ROOT.genfit.EventDisplay.getInstance()
+    
+#     if display is None:
+#         raise RuntimeError("Failed to get EventDisplay instance")
+    
+#     if track is None:
+#         raise RuntimeError("Track is None")
+    
+#     # ROOT.SetOwnership(display, False)  # Ensure ROOT does not own the display
+    
+#     display.addEvent(track)
+#     display.open()
 
 def hit_finder(slope, intercept, box_centers, box_ds, tol = 0.) :
     """ Finds hits intersected by Hough line """
@@ -22,187 +38,6 @@ def hit_finder(slope, intercept, box_centers, box_ds, tol = 0.) :
     # Return indices
     return np.where(hit_mask)[0]
 
-class hough() :
-    """ Hough transform implementation """
-
-    def __init__(self, n_yH, yH_range, n_xH, xH_range, z_offset, Hformat, space_scale, det_Zlen, squaretheta = False, smooth = True) :
-
-        self.n_yH = n_yH
-        self.n_xH = n_xH
-
-        self.yH_range = yH_range
-        self.xH_range = xH_range
-
-        self.z_offset = z_offset
-        self.HoughSpace_format = Hformat
-        self.space_scale = space_scale
-        
-        self.det_Zlen = det_Zlen
-
-        self.smooth = smooth
-
-        self.yH_bins = np.linspace(self.yH_range[0], self.yH_range[1], n_yH)
-        if not squaretheta :
-            self.xH_bins = np.linspace(self.xH_range[0], self.xH_range[1], n_xH)
-        else :
-            self.xH_bins = np.linspace(np.sign(self.xH_range[0])*(self.xH_range[0]**0.5), np.sign(self.xH_range[1])*(self.xH_range[1]**0.5), n_xH)
-            self.xH_bins = np.sign(self.xH_bins)*np.square(self.xH_bins)
-
-        self.cos_thetas = np.cos(self.xH_bins)
-        self.sin_thetas = np.sin(self.xH_bins)
-        
-        self.xH_i = np.array(list(range(n_xH)))
-
-        # A back-up Hough space designed to have more/less bins wrt the default one above.
-        # It is useful when fitting some low-E muon tracks, which are curved due to mult. scattering.
-        self.n_yH_scaled = int(n_yH*space_scale)
-        self.n_xH_scaled = int(n_xH*space_scale)
-        self.yH_bins_scaled = np.linspace(self.yH_range[0], self.yH_range[1], self.n_yH_scaled)
-        if not squaretheta :
-            self.xH_bins_scaled= np.linspace(self.xH_range[0], self.xH_range[1], self.n_xH_scaled)
-        else :
-            self.xH_bins_scaled = np.linspace(np.sign(self.xH_range[0])*(self.xH_range[0]**0.5), np.sign(self.xH_range[1])*(self.xH_range[1]**0.5), self.n_xH_scaled)
-            self.xH_bins_scaled = np.sign(self.xH_bins_scaled)*np.square(self.xH_bins_scaled)
-
-        self.cos_thetas_scaled = np.cos(self.xH_bins_scaled)
-        self.sin_thetas_scaled = np.sin(self.xH_bins_scaled)
-
-        self.xH_i_scaled = np.array(list(range(self.n_xH_scaled)))
-
-    def fit(self, hit_collection, is_scaled, draw, weights = None) :
-
-        if not is_scaled:
-           n_xH = self.n_xH
-           n_yH = self.n_yH
-           cos_thetas = self.cos_thetas
-           sin_thetas = self.sin_thetas
-           xH_bins = self.xH_bins
-           yH_bins = self.yH_bins
-           xH_i = self.xH_i
-           res = self.res
-        else:
-           n_xH = self.n_xH_scaled
-           n_yH = self.n_yH_scaled
-           cos_thetas = self.cos_thetas_scaled
-           sin_thetas = self.sin_thetas_scaled
-           xH_bins = self.xH_bins_scaled
-           yH_bins = self.yH_bins_scaled
-           xH_i = self.xH_i_scaled
-           res = self.res*self.space_scale
-
-        self.accumulator = np.zeros((n_yH, n_xH))
-        for i_hit, hit in enumerate(hit_collection) :
-            shifted_hitZ = hit[0] - self.z_offset
-            if self.HoughSpace_format == 'normal':
-                 hit_yH = shifted_hitZ*cos_thetas + hit[1]*sin_thetas
-            elif self.HoughSpace_format == 'linearSlopeIntercept':
-                 hit_yH = hit[1] - shifted_hitZ*xH_bins
-            elif self.HoughSpace_format== 'linearIntercepts':
-                 hit_yH = (self.det_Zlen*hit[1] - shifted_hitZ*xH_bins)/(self.det_Zlen - shifted_hitZ)
-            out_of_range = np.logical_and(hit_yH > self.yH_range[0], hit_yH < self.yH_range[1]) 
-            hit_yH_i = np.floor((hit_yH[out_of_range] - self.yH_range[0])/(self.yH_range[1] - self.yH_range[0])*n_yH).astype(np.int_)
-
-            if weights is not None :
-                self.accumulator[hit_yH_i, xH_i[out_of_range]] += weights[i_hit]
-            else :
-                self.accumulator[hit_yH_i, xH_i[out_of_range]] += 1
-
-        # Smooth accumulator
-        if self.smooth_full :
-            self.accumulator = scipy.ndimage.gaussian_filter(self.accumulator, self.sigma, truncate=self.truncate)
-
-        # This might be useful for debugging, but leave out for now.
-        if draw :
-            plt.figure()
-            plt.imshow(self.accumulator, origin = "lower", extent = [self.xH_range[0], self.xH_range[-1], self.yH_range[0], self.yH_range[-1]], aspect = "auto")
-            if self.HoughSpace_format == 'normal':
-               plt.xlabel(r"$\theta$ [rad]")
-               plt.ylabel("r [cm]")
-            elif self.HoughSpace_format == 'linearSlopeIntercept':
-               plt.xlabel("slope")
-               plt.ylabel("intercept @ 1st plane [cm]")
-            elif self.HoughSpace_format == 'linearIntercepts':
-               plt.xlabel("intercept @ last plane [cm]")
-               plt.ylabel("intercept @ 1st plane [cm]")
-            plt.tight_layout()
-            plt.show()
-
-        if self.smooth_full:
-          # In case of multiple occurrences of the maximum values, argmax returns
-          # the indices corresponding to the first occurrence(along 1st axis).
-          i_max = np.unravel_index(self.accumulator.argmax(), self.accumulator.shape)
-        else:
-          # In case there are more than 1 bins with the maximal Nentries, check if the n-th quantile of
-          # found peaks along 'slope' axis(yH axis) enloses <n-th quantile> portion of all maxima 'slope' bins
-          # within a specified range. It is advisable that that range is consistent with
-          # the detector angular resolution. 
-          maxima = np.argwhere(self.accumulator == np.amax(self.accumulator))
-          if len(maxima) == 1:
-            i_max = maxima[0]
-          elif len(maxima)==0 or (len(maxima) > 1 and self.HoughSpace_format == 'linearIntercepts'):
-               # if no reasonable way to select btw maxima, force track-build failure
-               # to be decided what to do in 'linearIntercepts' case and multiple maxima
-               return(-999, -999)
-          elif len(maxima) > 1 and abs(min([x[1] for x in maxima]) - max([x[1] for x in maxima])) < res:
-               i_max = maxima[0]
-          else:
-            # FIXME: the next two lines can be a single line command for sure
-            maxima_slopesAxis_list = list([x[1] for x in maxima])
-            maxima_slopesAxis_list = np.asarray(maxima_slopesAxis_list)
-            quantile = np.quantile(maxima_slopesAxis_list, self.n_quantile)
-            Nwithin = 0
-            # FIXME: a more elegant 'hidden' loop is maybe possible here too
-            for item in maxima:
-               if abs(item[1]-quantile)< res:
-                 Nwithin += 1
-            if Nwithin/len(maxima) > self.n_quantile: 
-               i_x = min([x[1] for x in maxima], key=lambda b: abs(b-quantile))
-               for im in maxima:
-                 if im[1] == i_x : i_max = im
-            else: 
-                 # if no reasonable way to select btw maxima, force track-build failure
-                 return(-999, -999)
-
-        found_yH = yH_bins[int(i_max[0])]
-        found_xH = xH_bins[int(i_max[1])]
-        
-        if self.HoughSpace_format == 'normal':
-           slope = -1./np.tan(found_xH)
-           interceptShift = found_yH/np.sin(found_xH)
-           intercept = (np.tan(found_xH)*interceptShift + self.z_offset)/np.tan(found_xH)
-        elif self.HoughSpace_format == 'linearSlopeIntercept':
-           slope = found_xH
-           intercept = found_yH - slope*self.z_offset
-        elif self.HoughSpace_format == 'linearIntercepts':
-           slope = (found_xH - found_yH)/self.det_Zlen
-           intercept = found_yH - slope*self.z_offset
-        
-        return (slope, intercept)
-
-    def fit_randomize(self, hit_collection, hit_d, n_random, is_scaled, draw, weights = None) :
-        success = True
-        if not len(hit_collection) :
-            return (-1, -1, [[],[]], [], False)
-
-        # Randomize hits
-        if (n_random > 0) :
-            random_hit_collection = []
-            for i_random in range(n_random) :
-                random_hits = np.random.uniform(size = hit_collection.shape) - 0.5
-                random_hits *= hit_d
-                random_hits += hit_collection
-                random_hit_collection.append(random_hits)
-
-            random_hit_collection = np.concatenate(random_hit_collection)
-            if weights is not None :
-                weights = np.tile(weights, n_random)
-
-            fit = self.fit(random_hit_collection, is_scaled, draw, weights)
-        else :
-            fit = self.fit(hit_collection, is_scaled, draw, weights)
-
-        return fit
-
 def numPlanesHit(systems, detector_ids) :
     scifi_stations = []
     mufi_ds_planes = []
@@ -213,7 +48,7 @@ def numPlanesHit(systems, detector_ids) :
     mufi_us_planes.append( (detector_ids[systems == 2]%10000)//1000 )
 
     return len(np.unique(scifi_stations)) + len(np.unique(mufi_ds_planes)) + len(np.unique(mufi_us_planes))
-    
+
 class MuonReco(ROOT.FairTask) :
     " Muon reconstruction "
 
@@ -227,9 +62,6 @@ class MuonReco(ROOT.FairTask) :
         self.scifiDet = self.lsOfGlobals.FindObject('Scifi')
         self.mufiDet = self.lsOfGlobals.FindObject('MuFilter')
         self.ioman = ROOT.FairRootManager.Instance()
-
-        # Pass input data through to output.
-        # self.Passthrough()
         
         # MC or data - needed for hit timing unit
         if self.ioman.GetInTree().GetName() == 'rawConv': self.isMC = False
@@ -359,6 +191,11 @@ class MuonReco(ROOT.FairTask) :
         if not track_case_exists:
            raise RuntimeError("Unknown tracking case, check naming in parameter xml file.")
 
+        # Get speed of light in medium
+        self.SpeedLightMedium = self.mufiDet.GetConfParF("MuFilter/DsPropSpeed")
+        # self.SpeedLightMedium = 15.0
+        # print(f"Speed of light in ds: {self.SpeedLightMedium*0.01/10**(-9)} m/s") # DEBUG
+
         # Get sensor dimensions from geometry
         self.MuFilter_ds_dx = self.mufiDet.GetConfParF("MuFilter/DownstreamBarY") # Assume y dimensions in vertical bars are the same as x dimensions in horizontal bars.
         self.MuFilter_ds_dy = self.mufiDet.GetConfParF("MuFilter/DownstreamBarY") # Assume y dimensions in vertical bars are the same as x dimensions in horizontal bars.
@@ -438,6 +275,8 @@ class MuonReco(ROOT.FairTask) :
         # Now initialize output in genfit::track or sndRecoTrack format
            if self.genfitTrack:
               self.kalman_tracks = ROOT.TObjArray(10)
+              ROOT.SetOwnership(self.kalman_tracks, False) # DEBUG
+              
               if hasattr(self, "standalone") and self.standalone:
                  self.ioman.Register("Reco_MuonTracks", self.ioman.GetFolderName(), self.kalman_tracks, ROOT.kTRUE)
            else:
@@ -452,7 +291,9 @@ class MuonReco(ROOT.FairTask) :
            self.mufiDet.InitEvent(self.EventHeader)
 
         # internal storage of clusters
-        if self.Scifi_meas: self.clusScifi = ROOT.TObjArray(100)
+        if self.Scifi_meas: 
+            self.clusScifi = ROOT.TObjArray(100)
+            ROOT.SetOwnership(self.clusScifi, False) # DEBUG
         
         # Kalman filter stuff
 
@@ -467,7 +308,17 @@ class MuonReco(ROOT.FairTask) :
         self.kalman_fitter.setMaxIterations(50)
         self.kalman_sigmaScifi_spatial = self.Scifi_dx / 12**0.5
         self.kalman_sigmaMufiUS_spatial = self.MuFilter_us_dy / 12**0.5
-        self.kalman_sigmaMufiDS_spatial = self.MuFilter_ds_dy/ 12**0.5
+        ds_res_y = self.MuFilter_ds_dy/ 12**0.5
+        self.ds_res_y = ds_res_y
+        # print(f"Resolution along y in ds: {ds_res_y} cm") # DEBUG
+        delta_t = 150*1e-3/np.sqrt(2) # ps
+        delta_calibration = 1/12**0.5
+        # print(f"Delta calibration: {delta_calibration} cm") # DEBUG
+        ds_res_x = np.sqrt((0.5*self.SpeedLightMedium*2*delta_t)**2.0 + delta_calibration**2.0)
+        self.ds_res_x = ds_res_x
+        # print(f"Resolution along x in ds: {ds_res_x} cm") # DEBUG
+        self.kalman_sigmaMufiDS_spatial = max(ds_res_y, ds_res_x)
+        print(f"Resolution along y = {ds_res_y}, resolution along x = {ds_res_x}\n")
 
         # Init() MUST return int
         return 0
@@ -491,23 +342,17 @@ class MuonReco(ROOT.FairTask) :
     def SetStandalone(self):
         self.standalone = 1
 
-    def Passthrough(self) :
-        T = self.ioman.GetInTree()
-        
-        for x in T.GetListOfBranches():
-             obj_name = x.GetName()
-             if self.ioman.GetObject(obj_name) == None :
-                 continue
-             self.ioman.Register(obj_name, self.ioman.GetFolderName(), self.ioman.GetObject(obj_name), ROOT.kTRUE)
-
     def Exec(self, opt) :
         self.kalman_tracks.Clear('C')
+
+        # print(f"New event !!!") # DEBUG
 
         # Set scaling in case task is run seperately from other tracking tasks
         if self.scale>1 and self.standalone:
            if ROOT.gRandom.Rndm() > 1.0/self.scale: return
 
         self.events_run += 1
+        # print(f"Event number: {self.events_run}") # DEBUG
         hit_collection = {"pos" : [[], [], []],
                           "d" : [[], [], []],
                           "vert" : [],
@@ -516,7 +361,12 @@ class MuonReco(ROOT.FairTask) :
                           "detectorID" : [],
                           "B" : [[], [], []],
                           "time": [],
-                          "mask": []}
+                          "mask": [],
+                          "hitid": []}
+
+        hit_id = 0                  
+
+        hit_collection_ds_vertical = {"pos" : [[], [], []]} # DEBUG
 
         if ("us" in self.hits_to_fit) or ("ds" in self.hits_to_fit) or ("ve" in self.hits_to_fit) :
             # Loop through muon filter hits
@@ -531,13 +381,92 @@ class MuonReco(ROOT.FairTask) :
                 elif muFilterHit.GetSystem() == 3 :
                     if "ds" not in self.hits_to_fit :
                         continue
+                    # keep only horizontal counts for ds 3D tracking
+                    if muFilterHit.isVertical() :
+                        hit_collection_ds_vertical["pos"][0].append(self.a.X()) # DEBUG
+                        hit_collection_ds_vertical["pos"][1].append(self.a.Y()) # DEBUG
+                        hit_collection_ds_vertical["pos"][2].append(self.a.Z()) # DEBUG
+                        continue
                 else :
                     if self.logger.IsLogNeeded(ROOT.fair.Severity.warn):
                        print("WARNING! Unknown MuFilter system!!")
 
                 self.mufiDet.GetPosition(muFilterHit.GetDetectorID(), self.a, self.b)
 
-                hit_collection["pos"][0].append(self.a.X())
+                # get x position from tof for ds tracking
+                if muFilterHit.GetSystem() == 3 :
+                    L = abs(self.b.X()-self.a.X())
+                    # print(f"a = {self.a.X()}") # DEBUG
+                    # print(f"b = {self.b.X()}") # DEBUG
+                    # print(f"Length along x: {L} cm")    #DEBUG
+                    # t0 = muFilterHit.GetTime(0)
+                    t0 = self.mufiDet.GetCorrectedTime(muFilterHit.GetDetectorID(), 0, muFilterHit.GetTime(0)*6.25, 0)
+                    # t1 = muFilterHit.GetTime(1)
+                    t1 = self.mufiDet.GetCorrectedTime(muFilterHit.GetDetectorID(), 1, muFilterHit.GetTime(1)*6.25, 0)
+                    # DeltaT = muFilterHit.GetDeltaT()
+                    dummy = -999.0
+                    # print(f"t0: {t0} ns, t1: {t1} ns") # DEBUG
+                    DeltaT = t0-t1
+                    if np.isclose(DeltaT, dummy):
+                        continue
+                    print(f"Delta t: {DeltaT} ns") # DEBUG
+                    speed = self.SpeedLightMedium
+                    # print(f"Speed in medium: {speed}") # DEBUG
+                    x0 = 0.5*(L+DeltaT*speed)
+                    x1 = 0.5*(L-DeltaT*speed) # DEBUG
+                    # if not np.isclose(L, (x0+x1)) : # DEBUG
+                    #     print(f"Inconsistence !! \n Length = {L} \n x0+x1= {x0+x1}") # DEBUG
+                    # if x0<0 : # DEBUG
+                    #     print(f"x0 negative !!") # DEBUG
+                    # if x1<0 : # DEBUG
+                    #     print(f"x1 negative !!") # DEBUG
+                    # if (DeltaT>0 and abs(x0)<abs(x1)) or  (DeltaT<0 and abs(x0)>abs(x1)) : # DEBUG
+                        # print(f"x0 = {x0}") # DEBUG
+                        # print(f"x1 = {x1}") # DEBUG
+                        # print("ERROR") # DEBUG
+                    # if abs(x0)>abs(L): # DEBUG
+                    #     print(f"x0 > L !!") # DEBUG
+                    # # print(f"x0: {x0} cm")    #DEBUG
+                    x = self.a.X() - x0
+                    print(f"x with abs = {x}")
+                    print(f"z = {self.a.Z()}\n")
+                    # if x >= self.a.X(): #DEBUG
+                    #     print(f"x > a !!") #DEBUG
+                    # if x <= self.b.X(): #DEBUG
+                    #     print(f"x < b !!") #DEBUG
+                    # # print(f"x: {x} cm")    #DEBUG
+                    hit_collection["pos"][0].append(x)
+
+                    # L = self.b.X()-self.a.X()
+                    # t0 = muFilterHit.GetTime(0)
+                    # t1 = muFilterHit.GetTime(1)
+                    # dummy = -999.0
+                    # if np.isclose(t0, dummy) or np.isclose(t1, dummy):
+                    #     continue
+                    # DeltaT = t0-t1
+                    # x0 = 0.5*(L+DeltaT*speed)
+                    # x1 = 0.5*(L-DeltaT*speed)
+                    # x = self.a.X() + x0
+                    # print(f"x without abs = {x}\n")
+                    # hit_collection["pos"][0].append(x)
+
+                    # # Check horizontal to vertical correspondance with event 100028
+                    # if self.events_run==100028 :
+                    #     print(f"Event number: {self.events_run}") # DEBUG
+                    #     # Check that these are horizontal ds hits
+                    #     print(f"DS ? : {muFilterHit.GetSystem() == 3}")
+                    #     print(f"Horizontal ? : {not muFilterHit.isVertical()}")
+                    #     print(f"DetectorID = {muFilterHit.GetDetectorID()}") # DEBUG
+                    #     print(f"L = {L}")
+                    #     print(f"A.X = {self.a.X()}")
+                    #     print(f"B.X = {self.b.X()}")
+                    #     print(f"x0 = {x0}")
+                    #     print(f"x1 = {x1}")
+                    #     print(f"x = {x}\n")
+
+                else :
+                    hit_collection["pos"][0].append(self.a.X())
+
                 hit_collection["pos"][1].append(self.a.Y())
                 hit_collection["pos"][2].append(self.a.Z())
 
@@ -556,6 +485,9 @@ class MuonReco(ROOT.FairTask) :
                 hit_collection["detectorID"].append(muFilterHit.GetDetectorID())
                 hit_collection["mask"].append(False)
 
+                hit_collection["hitid"].append(hit_id)
+                hit_id+=1
+
                 times = []
                 # Downstream
                 if muFilterHit.GetSystem() == 3 :
@@ -563,8 +495,13 @@ class MuonReco(ROOT.FairTask) :
                     for ch in range(self.MuFilter_ds_nSiPMs_hor):
                         if muFilterHit.isVertical() and ch==self.MuFilter_ds_nSiPMs_vert: break
                         if self.isMC:
+                          # print(f"Already ns") # DEBUG  
                           times.append(muFilterHit.GetAllTimes()[ch]) #already in ns
-                        else: times.append(muFilterHit.GetAllTimes()[ch]*6.25) #tdc2ns
+                          # print(f"Time: {muFilterHit.GetAllTimes()[ch]} ns") # DEBUG
+                        else: 
+                          # print(f"Not already ns") # DEBUG   
+                          times.append(muFilterHit.GetAllTimes()[ch]*6.25) #tdc2ns
+                          # print(f"Time: {muFilterHit.GetAllTimes()[ch]*6.25} ns") # DEBUG
                 # Upstream
                 else :
                     hit_collection["d"][1].append(self.MuFilter_us_dy)
@@ -605,6 +542,9 @@ class MuonReco(ROOT.FairTask) :
                    hit_collection["system"].append(0)
                    hit_collection["detectorID"].append(scifiCl.GetFirst())
                    hit_collection["mask"].append(False)
+
+                   hit_collection["hitid"].append(hit_id)
+                   hit_id+=1
 
                    times = []
                    if self.isMC : times.append(scifiCl.GetTime()/6.25) # for MC, hit time is in ns. Then for MC Scifi cluster time one has to divide by tdc2ns
@@ -671,6 +611,9 @@ class MuonReco(ROOT.FairTask) :
                      else:
                           hit_collection["mask"].append(False)
 
+                     hit_collection["hitid"].append(hit_id)
+                     hit_id+=1
+
                      times = []
 
                      if self.isMC : times.append(scifiHit.GetTime()) # already in ns
@@ -686,7 +629,7 @@ class MuonReco(ROOT.FairTask) :
                 this_dtype = np.bool_
             elif key == 'mask' :
                 this_dtype = np.bool_
-            elif key == "index" or key == "system" or key == "detectorID" :
+            elif key == "index" or key == "system" or key == "detectorID" or key== "hitid":
                 this_dtype = np.int32
             elif key != 'time' :
                 this_dtype = np.float32
@@ -694,6 +637,11 @@ class MuonReco(ROOT.FairTask) :
                length = max(map(len, item))
                hit_collection[key] = np.stack(np.array([xi+[None]*(length-len(xi)) for xi in item]), axis = 1)
             else: hit_collection[key] = np.array(item, dtype = this_dtype)
+        
+        # Same for hit collection ds vertical # DEBUG
+        for key, item in hit_collection_ds_vertical.items() :
+            this_dtype = np.float32
+            hit_collection_ds_vertical[key] = np.array(item, dtype = this_dtype)
 
         # Useful for later
         triplet_condition_system = []
@@ -706,17 +654,36 @@ class MuonReco(ROOT.FairTask) :
         if "ds" in self.hits_for_triplet :
             triplet_condition_system.append(3)
 
+        # compare x positions from tof and from vertical hits # DEBUG
+        for index_match in range(len(hit_collection_ds_vertical)) :
+            if len(hit_collection["pos"][2])>0 and len(hit_collection_ds_vertical["pos"][2])>0:
+                match = np.isclose(hit_collection["pos"][2], hit_collection_ds_vertical["pos"][2][index_match])
+                if np.any(match):
+                    z_ver = hit_collection_ds_vertical["pos"][2][index_match]
+                    z_hor = hit_collection["pos"][2][match]
+                    x_ver = hit_collection_ds_vertical["pos"][0][index_match]
+                    x_hor = hit_collection["pos"][0][match]
+                    # print(f"z_ver = {z_ver}, z_hor = {z_hor}")
+                    # print(f"x_ver = {x_ver}, x_hor = {x_hor} \n")
+
+
         # Reconstruct muons until there are not enough hits in downstream muon filter
         for i_muon in range(self.max_reco_muons) :
 
-            triplet_hits_horizontal = np.logical_and( ~hit_collection["vert"],
-                                                      np.isin(hit_collection["system"], triplet_condition_system) )
-            triplet_hits_vertical = np.logical_and( hit_collection["vert"],
-                                                    np.isin(hit_collection["system"], triplet_condition_system) )
+            triplet_hits_horizontal = np.array([np.isin(hit_collection["system"][i], triplet_condition_system) if hit_collection["system"][i]==3 else
+                                                np.logical_and(~hit_collection["vert"][i], np.isin(hit_collection["system"][i], triplet_condition_system)) for i in range(len(hit_collection["detectorID"]))])
+
+            triplet_hits_ds_horizontal = np.logical_and(~hit_collection["vert"], np.logical_and(np.isin(hit_collection["system"], triplet_condition_system), hit_collection["system"]==3))
+            
+            triplet_hits_vertical = np.array([np.isin(hit_collection["system"][i], triplet_condition_system) if hit_collection["system"][i]==3 else
+                                                np.logical_and(hit_collection["vert"][i], np.isin(hit_collection["system"][i], triplet_condition_system)) for i in range(len(hit_collection["detectorID"]))])
 
             n_planes_ZY = numPlanesHit(hit_collection["system"][triplet_hits_horizontal],
                                        hit_collection["detectorID"][triplet_hits_horizontal])
-            if n_planes_ZY < self.min_planes_hit :
+            n_planes_ds_ZY = numPlanesHit(hit_collection["system"][triplet_hits_ds_horizontal],
+                                       hit_collection["detectorID"][triplet_hits_ds_horizontal])
+
+            if n_planes_ZY < self.min_planes_hit or n_planes_ds_ZY < self.min_planes_hit:
                 break
 
             n_planes_ZX = numPlanesHit(hit_collection["system"][triplet_hits_vertical],
@@ -725,9 +692,9 @@ class MuonReco(ROOT.FairTask) :
                 break
 
             # Get hits in hough transform format
-            muon_hits_horizontal = np.logical_and( np.logical_and( ~hit_collection["vert"], ~hit_collection["mask"]),
+            muon_hits_horizontal = np.logical_and(~hit_collection["mask"],
                                                    np.isin(hit_collection["system"], [1, 2, 3]))
-            muon_hits_vertical = np.logical_and( np.logical_and( hit_collection["vert"], ~hit_collection["mask"]),
+            muon_hits_vertical = np.logical_and(~hit_collection["mask"],
                                                  np.isin(hit_collection["system"], [1, 2, 3]))
             scifi_hits_horizontal = np.logical_and( np.logical_and( ~hit_collection["vert"], ~hit_collection["mask"]),
                                                     np.isin(hit_collection["system"], [0]))
@@ -778,6 +745,9 @@ class MuonReco(ROOT.FairTask) :
                   tol = 3*self.tolerance
 
             # Check if track intersects minimum number of hits in each plane.
+            print(f"Hough slope hor. = {ZY_hough[0]}, Hough intercept hor. = {ZY_hough[1]}\n")
+            print(f"Hough slope ver. = {ZX_hough[0]}, Hough intercept ver. = {ZX_hough[1]}\n")
+
             track_hits_for_triplet_ZY = hit_finder(ZY_hough[0], ZY_hough[1], 
                                                    np.dstack([hit_collection["pos"][2][triplet_hits_horizontal],
                                                               hit_collection["pos"][1][triplet_hits_horizontal]]),
@@ -831,23 +801,34 @@ class MuonReco(ROOT.FairTask) :
 #                print("Found {0} downstream ZY planes associated to muon track".format(n_planes_ds_ZY))
             
             # This time with all the hits, not just triplet condition.
+            
+            # useful for later as well
+            horizontal_condition = ~hit_collection["vert"] | hit_collection["system"]==3
+            # print(f"Horizontal condition: {horizontal_condition}") # DEBUG
+            vertical_condition = hit_collection["vert"] | hit_collection["system"]==3
+            # print(f"Vertical condition: {vertical_condition}") # DEBUG
+            
             track_hits_ZY = hit_finder(ZY_hough[0], ZY_hough[1], 
-                                       np.dstack([hit_collection["pos"][2][~hit_collection["vert"]], 
-                                                  hit_collection["pos"][1][~hit_collection["vert"]]]), 
-                                       np.dstack([hit_collection["d"][2][~hit_collection["vert"]],
-                                                  hit_collection["d"][1][~hit_collection["vert"]]]), tol)
+                                       np.dstack([hit_collection["pos"][2][horizontal_condition], 
+                                                  hit_collection["pos"][1][horizontal_condition]]), 
+                                       np.dstack([hit_collection["d"][2][vertical_condition],
+                                                  hit_collection["d"][1][vertical_condition]]), tol)
 
             track_hits_ZX = hit_finder(ZX_hough[0], ZX_hough[1], 
-                                       np.dstack([hit_collection["pos"][2][hit_collection["vert"]], 
-                                                  hit_collection["pos"][0][hit_collection["vert"]]]), 
-                                       np.dstack([hit_collection["d"][2][hit_collection["vert"]], 
-                                                  hit_collection["d"][0][hit_collection["vert"]]]), tol)
+                                       np.dstack([hit_collection["pos"][2][vertical_condition], 
+                                                  hit_collection["pos"][0][vertical_condition]]), 
+                                       np.dstack([hit_collection["d"][2][vertical_condition], 
+                                                  hit_collection["d"][0][vertical_condition]]), tol)
+
             # Onto Kalman fitter (based on SndlhcTracking.py)
             posM    = ROOT.TVector3(0, 0, 0.)
+            # ROOT.SetOwnership(posM, False) # DEBUG
             momM = ROOT.TVector3(0,0,100.)  # default track with high momentum
+            # ROOT.SetOwnership(momM, False) # DEBUG
 
             # approximate covariance
             covM = ROOT.TMatrixDSym(6)
+            # ROOT.SetOwnership(covM, False) # DEBUG
             if self.hits_to_fit.find('sf') >= 0:
                 res = self.kalman_sigmaScifi_spatial
             if self.hits_to_fit == 'ds':
@@ -855,100 +836,231 @@ class MuonReco(ROOT.FairTask) :
             for  i in range(3):   covM[i][i] = res*res
             for  i in range(3,6): covM[i][i] = ROOT.TMath.Power(res / (4.*2.) / ROOT.TMath.Sqrt(3), 2)
             rep = ROOT.genfit.RKTrackRep(13)
+            # ROOT.SetOwnership(rep, False) # DEBUG
 
             # start state
             state = ROOT.genfit.MeasuredStateOnPlane(rep)
+            # ROOT.SetOwnership(state, False) # DEBUG
             rep.setPosMomCov(state, posM, momM, covM)
 
             # create track
             seedState = ROOT.TVectorD(6)
+            # ROOT.SetOwnership(seedState, False) # DEBUG
             seedCov   = ROOT.TMatrixDSym(6)
+            # ROOT.SetOwnership(seedCov, False) # DEBUG
             rep.get6DStateCov(state, seedState, seedCov)
 
             theTrack = ROOT.genfit.Track(rep, seedState, seedCov)
+            # ROOT.SetOwnership(theTrack, False)  # DEBUG
+            # print(f"Track before: {theTrack}") # DEBUG
+
+            # Remove doublets from hit_collection
+            non_doublets = np.unique(hit_collection["detectorID"], return_index=True)[1]
+            hit_collection["pos"][0] = hit_collection["pos"][0][non_doublets]
+            hit_collection["pos"][1] = hit_collection["pos"][1][non_doublets]
+            hit_collection["pos"][2] = hit_collection["pos"][2][non_doublets]
+            hit_collection["B"][0] = hit_collection["B"][0][non_doublets]
+            hit_collection["B"][1] = hit_collection["B"][1][non_doublets]
+            hit_collection["B"][2] = hit_collection["B"][2][non_doublets]
+            hit_collection["vert"] = hit_collection["vert"][non_doublets]
+            hit_collection["system"] = hit_collection["system"][non_doublets]
+            hit_collection["d"][0] = hit_collection["d"][0][non_doublets]
+            hit_collection["d"][1] = hit_collection["d"][1][non_doublets]
+            hit_collection["d"][2] = hit_collection["d"][2][non_doublets]
+            hit_collection["detectorID"] = hit_collection["detectorID"][non_doublets]
+            # print(hit_collection["detectorID"]) # DEBUG
+            hit_collection["mask"] = hit_collection["mask"][non_doublets]
+            hit_collection["time"][0] = hit_collection["time"][0][non_doublets]
+            hit_collection["time"][1] = hit_collection["time"][1][non_doublets]
+
 
             # Sort measurements in Z
-            hit_z = np.concatenate([hit_collection["pos"][2][hit_collection["vert"]][track_hits_ZX],
-                                    hit_collection["pos"][2][~hit_collection["vert"]][track_hits_ZY]])
 
-            hit_A0 = np.concatenate([hit_collection["pos"][0][hit_collection["vert"]][track_hits_ZX],
-                                     hit_collection["pos"][0][~hit_collection["vert"]][track_hits_ZY]])
+            hit_z = np.concatenate([hit_collection["pos"][2][vertical_condition][track_hits_ZX],
+                                    hit_collection["pos"][2][horizontal_condition][track_hits_ZY]])
 
-            hit_A1 = np.concatenate([hit_collection["pos"][1][hit_collection["vert"]][track_hits_ZX],
-                                     hit_collection["pos"][1][~hit_collection["vert"]][track_hits_ZY]])
+            hit_A0 = np.concatenate([hit_collection["pos"][0][vertical_condition][track_hits_ZX],
+                                     hit_collection["pos"][0][horizontal_condition][track_hits_ZY]])
+
+            hit_A1 = np.concatenate([hit_collection["pos"][1][vertical_condition][track_hits_ZX],
+                                     hit_collection["pos"][1][horizontal_condition][track_hits_ZY]])
             
-            hit_B0 = np.concatenate([hit_collection["B"][0][hit_collection["vert"]][track_hits_ZX],
-                                     hit_collection["B"][0][~hit_collection["vert"]][track_hits_ZY]])
+            hit_B0 = np.concatenate([hit_collection["pos"][0][vertical_condition][track_hits_ZX],
+                                     hit_collection["pos"][0][horizontal_condition][track_hits_ZY]])
 
-            hit_B1 = np.concatenate([hit_collection["B"][1][hit_collection["vert"]][track_hits_ZX],
-                                     hit_collection["B"][1][~hit_collection["vert"]][track_hits_ZY]])
+            hit_B1 = np.concatenate([hit_collection["B"][1][vertical_condition][track_hits_ZX],
+                                     hit_collection["B"][1][horizontal_condition][track_hits_ZY]])
 
-            hit_B2 = np.concatenate([hit_collection["B"][2][hit_collection["vert"]][track_hits_ZX],
-                                     hit_collection["B"][2][~hit_collection["vert"]][track_hits_ZY]])
+            hit_B2 = np.concatenate([hit_collection["B"][2][vertical_condition][track_hits_ZX],
+                                     hit_collection["B"][2][horizontal_condition][track_hits_ZY]])
 
-            hit_detid = np.concatenate([hit_collection["detectorID"][hit_collection["vert"]][track_hits_ZX],
-                                        hit_collection["detectorID"][~hit_collection["vert"]][track_hits_ZY]])
+            hit_detid = np.concatenate([hit_collection["detectorID"][vertical_condition][track_hits_ZX],
+                                        hit_collection["detectorID"][horizontal_condition][track_hits_ZY]])
 
-            kalman_spatial_sigma = np.concatenate([hit_collection["d"][0][hit_collection["vert"]][track_hits_ZX] / 12**0.5,
-                                                   hit_collection["d"][1][~hit_collection["vert"]][track_hits_ZY] / 12**0.5])
+            hit_ids = np.concatenate([hit_collection["hitid"][vertical_condition][track_hits_ZX],
+                                        hit_collection["hitid"][horizontal_condition][track_hits_ZY]])
+
+            kalman_spatial_sigma = np.concatenate([hit_collection["d"][0][vertical_condition][track_hits_ZX] / 12**0.5,
+                                                   hit_collection["d"][1][horizontal_condition][track_hits_ZY] / 12**0.5])
 
             # Maximum distance. Use (d_xy/2**2 + d_z/2**2)**0.5
-            kalman_max_dis = np.concatenate([((hit_collection["d"][0][hit_collection["vert"]][track_hits_ZX]/2.)**2 +
-                                              (hit_collection["d"][2][hit_collection["vert"]][track_hits_ZX]/2.)**2)**0.5,
-                                             ((hit_collection["d"][1][~hit_collection["vert"]][track_hits_ZY]/2.)**2 +
-                                              (hit_collection["d"][2][~hit_collection["vert"]][track_hits_ZY]/2.)**2)**0.5])
+            kalman_max_dis = np.concatenate([((hit_collection["d"][0][vertical_condition][track_hits_ZX]/2.)**2 +
+                                              (hit_collection["d"][2][vertical_condition][track_hits_ZX]/2.)**2)**0.5,
+                                             ((hit_collection["d"][1][horizontal_condition][track_hits_ZY]/2.)**2 +
+                                              (hit_collection["d"][2][horizontal_condition][track_hits_ZY]/2.)**2)**0.5])
 
             hitID = 0 # Does it matter? We don't have a global hit ID.
 
             hit_time = {}
             for ch in range(hit_collection["time"].shape[0]):
-                hit_time[ch] = np.concatenate([hit_collection["time"][ch][hit_collection["vert"]][track_hits_ZX],
-                                      hit_collection["time"][ch][~hit_collection["vert"]][track_hits_ZY]])
+                hit_time[ch] = np.concatenate([hit_collection["time"][ch][vertical_condition][track_hits_ZX],
+                                      hit_collection["time"][ch][horizontal_condition][track_hits_ZY]])
+
+            # print(f"Number of passed hits (before): {len(kalman_spatial_sigma)}") # DEBUG
 
             for i_z_sorted in hit_z.argsort() :
+                # print(f"Times: {hit_time[0][i_z_sorted]} ns, {hit_time[1][i_z_sorted]} ns") # DEBUG
+                # print(f"(x,y,z) = ({hit_A0[i_z_sorted]},{hit_A1[i_z_sorted]},{hit_z[i_z_sorted]})") # DEBUG
                 tp = ROOT.genfit.TrackPoint()
-                hitCov = ROOT.TMatrixDSym(7)
-                hitCov[6][6] = kalman_spatial_sigma[i_z_sorted]**2
+                # ROOT.SetOwnership(tp, False)  # DEBUG
+                # hitCov = ROOT.TMatrixDSym(7)
+                # hitCov[6][6] = kalman_spatial_sigma[i_z_sorted]**2
+                hitCov = ROOT.TMatrixDSym(2)
+                # ROOT.SetOwnership(hitCov, False)  # DEBUG
+                hitCov.UnitMatrix()
+                hitCov[0][0] = self.ds_res_x**2
+                hitCov[1][1] = self.ds_res_y**2
+
+                hit_coords = ROOT.TVectorD(2)
+                # ROOT.SetOwnership(hit_coords, False)  # DEBUG
+                hit_coords[0] = hit_A0[i_z_sorted]
+                hit_coords[1] = hit_A1[i_z_sorted]
                 
-                measurement = ROOT.genfit.WireMeasurement(ROOT.TVectorD(7, array('d', [hit_A0[i_z_sorted],
-                                                                                       hit_A1[i_z_sorted],
-                                                                                       hit_z[i_z_sorted],
-                                                                                       hit_B0[i_z_sorted],
-                                                                                       hit_B1[i_z_sorted],
-                                                                                       hit_B2[i_z_sorted],
-                                                                                       0.])),
-                                                          hitCov,
-                                                          1, # detid?
-                                                          6, # hitid?
-                                                          tp)
+                # measurement = ROOT.genfit.WireMeasurement(ROOT.TVectorD(7, array('d', [hit_A0[i_z_sorted],
+                #                                                                        hit_A1[i_z_sorted],
+                #                                                                        hit_z[i_z_sorted],
+                #                                                                        hit_B0[i_z_sorted],
+                #                                                                        hit_B1[i_z_sorted],
+                #                                                                        hit_B2[i_z_sorted],
+                #                                                                        0.])),
+                #                                           hitCov,
+                #                                           1, # detid?
+                #                                           6, # hitid?
+                #                                           tp)
 
-                measurement.setMaxDistance(kalman_max_dis[i_z_sorted])
-                measurement.setDetId(int(hit_detid[i_z_sorted]))
-                measurement.setHitId(int(hitID))
-                hitID += 1
-                tp.addRawMeasurement(measurement)
-                theTrack.insertPoint(tp)
+                measurement = ROOT.genfit.PlanarMeasurement(
+                    hit_coords,
+                    hitCov,
+                    int(hit_detid[i_z_sorted]),
+                    int(hit_ids[i_z_sorted]),
+                    ROOT.nullptr,
+                )
+                # ROOT.SetOwnership(measurement, False)  # DEBUG
 
-            if not theTrack.checkConsistency():
+                measurement.setPlane(
+                            ROOT.genfit.SharedPlanePtr(
+                                ROOT.genfit.DetPlane(
+                                    ROOT.TVector3(0, 0, hit_z[i_z_sorted]),
+                                    ROOT.TVector3(1, 0, 0),
+                                    ROOT.TVector3(0, 1, 0),
+                                )
+                            ),
+                            int(hit_detid[i_z_sorted]),
+                        )
+
+                theTrack.insertPoint(ROOT.genfit.TrackPoint(measurement, theTrack))
+
+                # measurement.setMaxDistance(kalman_max_dis[i_z_sorted])
+                # measurement.setDetId(int(hit_detid[i_z_sorted]))
+                # measurement.setHitId(int(hitID))
+                # hitID += 1
+                # tp.addRawMeasurement(measurement)
+                # theTrack.insertPoint(tp)
+                # print(f"Added point: {tp}") # DEBUG
+
+            # if not theTrack.checkConsistency():
+            #     #print("Entered first if") # DEBUG
+            #     theTrack.Delete()
+            #     raise RuntimeError("Kalman fitter track consistency check failed.")
+
+            try:
+                theTrack.checkConsistency()
+            except Exception as e:
                 theTrack.Delete()
-                raise RuntimeError("Kalman fitter track consistency check failed.")
+                raise RuntimeError("Kalman fitter track consistency check failed.") from e
 
             # do the fit
             self.kalman_fitter.processTrack(theTrack) # processTrackWithRep(theTrack,rep,True)
 
             fitStatus = theTrack.getFitStatus()
             if not fitStatus.isFitConverged() and 0>1:
+                #print("Entered second if") # DEBUG
                 theTrack.Delete()
                 raise RuntimeError("Kalman fit did not converge.")
+
+            print("Creating theTrack...")
+            # Assuming you have the code for creating theTrack here
+            if theTrack:
+                print("theTrack created successfully")
+            else:
+                raise RuntimeError("Failed to create theTrack")
+
+            # ROOT.gROOT.SetBatch(False)  # DEBUG
+
+            display = ROOT.genfit.EventDisplay.getInstance()
+            # ROOT.SetOwnership(display, False)   # DEBUG
+            if display is None:
+                raise RuntimeError("Failed to get EventDisplay instance")
+
+            display.addEvent(theTrack)
+
+            display.open()
+            display.Clear() # DEBUG
+
+            # Print out the names of the objects in the cleanup list
+            # Get the list of objects that ROOT is tracking for cleanup
+            cleanups = ROOT.gROOT.GetListOfCleanups()
+            
+            # Print out the names of the objects in the cleanup list
+            print("Objects in the cleanup list:")
+            for obj in cleanups:
+                print(obj.GetName())
+                # if obj: obj.Delete()
+            print(f"\n")
+
+            # cleanups.Clear() # DEBUG
+
+            ROOT.SetOwnership(self.kalman_tracks, False) # DEBUG
+            # ROOT.SetOwnership(self.clusScifi, False) # DEBUG
+
+            # Print out the names of the objects in the cleanup list
+            print("Objects in the cleanup list 2.0:")
+            for obj in cleanups:
+                print(obj.GetName())
+            print(f"\n")
 
             # Now save the track if fit converged!
             theTrack.SetUniqueID(self.track_type)
             if fitStatus.isFitConverged():
+               print("Fit converged !!") # DEBUG
                if self.genfitTrack: self.kalman_tracks.Add(theTrack)
                else :
+                  #print(f"Entered else") # DEBUG
                   # Load items into snd track class object
+                  # print(f"x = {hit_A0} \n y = {hit_A1} \n z = {hit_z})") # DEBUG
+                #   hit_x_ver = hit_collection_ds_vertical["pos"][0] # DEBUG
+                #   hit_z_ver = hit_collection_ds_vertical["pos"][2] # DEBUG
+                #   print(f"x_ver = {hit_x_ver} \n z_ver = {hit_z_ver}") # DEBUG
+                  # Check chi2 value of the track
+                  track_chi2 = fitStatus.getChi2() # DEBUG
+                  track_ndf = fitStatus.getNdf() # DEBUG
+                  print(f"Chi square of genfit::track: {track_chi2}") # DEBUG
+                  print(f"Ndf of genfit::track: {track_ndf}") # DEBUG
+                  # print(f"Track after: {type(theTrack)}") # DEBUG
                   this_track = ROOT.sndRecoTrack(theTrack)
+                #   ROOT.SetOwnership(this_track, False)   # DEBUG
                   pointTimes = ROOT.std.vector(ROOT.std.vector('float'))()
+                #   ROOT.SetOwnership(pointTimes, False)   # DEBUG
                   for n, i_z_sorted in enumerate(hit_z.argsort()):
                       t_per_hit = []
                       for ch in range(len(hit_time)):
@@ -959,13 +1071,15 @@ class MuonReco(ROOT.FairTask) :
                   this_track.setTrackType(self.track_type)
                   # Save the track in sndRecoTrack format
                   self.kalman_tracks[i_muon] = this_track
+                  # return theTrack   # added to correspond to track_fit.py from AdvSND
                   # Delete the Kalman track object
+                  print(f"Delete the track !!") # DEBUG
                   theTrack.Delete()
 
             # Remove track hits and try to find an additional track
             # Find array index to be removed
-            index_to_remove_ZX = np.where(np.in1d(hit_collection["detectorID"], hit_collection["detectorID"][hit_collection["vert"]][track_hits_ZX]))[0]
-            index_to_remove_ZY = np.where(np.in1d(hit_collection["detectorID"], hit_collection["detectorID"][~hit_collection["vert"]][track_hits_ZY]))[0]
+            index_to_remove_ZX = np.where(np.in1d(hit_collection["detectorID"], hit_collection["detectorID"][vertical_condition][track_hits_ZX]))[0]
+            index_to_remove_ZY = np.where(np.in1d(hit_collection["detectorID"], hit_collection["detectorID"][horizontal_condition][track_hits_ZY]))[0]
 
             index_to_remove = np.concatenate([index_to_remove_ZX, index_to_remove_ZY])
             
