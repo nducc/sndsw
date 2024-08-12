@@ -344,7 +344,7 @@ def loopEvents(
        rc = source.GetInTree().GetEvent(N)
        # Delete SndlhcMuonReco kalman tracks container
        for ht_task in HT_tasks.values():
-           ht_task.kalman_tracks.Delete()
+           ht_task.kalman_tracks.clear()
        if withHoughTrack==1:
             HT_tasks['muon_reco_task_Sf'].Exec(0)
             HT_tasks['muon_reco_task_DS'].Exec(0)
@@ -1124,4 +1124,3 @@ def drawInfo(pad, k, run, event, timestamp,moreEventInfo=[]):
       for i in range(7):
         textInfo.DrawLatex(0.4, 0.9-dely*i, moreEventInfo[i])
       pad.cd(k)
-

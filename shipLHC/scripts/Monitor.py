@@ -742,16 +742,20 @@ class TrackSelector():
            if self.options.trackType == 'Scifi' or self.options.trackType == 'ScifiDS':
               self.muon_reco_task_Sf = options.FairTasks["houghTransform_Sf"]
               self.muon_reco_task_Sf.Init()
+              print(f"Need xml genfit 1 !")  # DEBUG
               self.genfitTrack = self.muon_reco_task_Sf.genfitTrack
            if self.options.trackType == 'DS' or self.options.trackType == 'ScifiDS':
               self.muon_reco_task_DS = options.FairTasks["houghTransform_DS"]
               self.muon_reco_task_DS.Init()
+              print(f"Need xml genfit 2 !")  # DEBUG
               self.genfitTrack = self.muon_reco_task_DS.genfitTrack
         if self.options.simpleTracking:
            self.trackTask = options.FairTasks["simpleTracking"]
            if not self.options.HoughTracking:
+              print(f"Need xml genfit 3 !")  # DEBUG
               self.genfitTrack = self.options.genfitTrack
            
+           print(f"Need xml genfit 4 !")  # DEBUG
            self.trackTask.SetTrackClassType(self.genfitTrack)
            self.trackTask.Init()
 
@@ -761,6 +765,9 @@ class TrackSelector():
 
         self.outTree = eventChain.CloneTree(0)
         ROOT.gDirectory.pwd()
+
+        # genfitTrack variable setting by hand DEBUG
+        self.genfitTrack = 1
         
         # after track tasks init(), output track format is known
         if self.genfitTrack:
