@@ -307,6 +307,9 @@ class MuonReco(ROOT.FairTask) :
         self.kalman_sigmaMufiDS_spatial = max(self.ds_res_y, self.ds_res_x)
         print(f"Resolution DS kalman: {self.kalman_sigmaMufiDS_spatial}")  # DEBUG
 
+        # Save the HT line prediction in a ntuple
+        self.ntuple = ROOT.TNtuple("HT_prediction","HT_prediction","eventN:zy_a:zy_b:zx_a:zx_b")
+
         # Init() MUST return int
         return 0
     
@@ -729,6 +732,9 @@ class MuonReco(ROOT.FairTask) :
                                        np.dstack([hit_collection["d"][2][vertical_condition], 
                                                   hit_collection["d"][0][vertical_condition]]), tol)
 
+            # save the HT line prediction in a Ntuple
+            self.ntuple.Fill(self.EventHeader.GetEventNumber(), ZY_hough[0], ZY_hough[1], ZX_hough[0], ZX_hough[1])     
+
             # Onto Kalman fitter (based on SndlhcTracking.py)
             posM    = ROOT.TVector3(0, 0, 0.)
             momM = ROOT.TVector3(0,0,100.)  # default track with high momentum
@@ -913,6 +919,10 @@ class MuonReco(ROOT.FairTask) :
                     raise Exception("Wrong number of dimensions found when deleting hits in iterative muon identification algorithm.")
 
     def FinishTask(self) :
+        # Save the ntuple to a file
+        self.f_ntuple = ROOT.TFile.Open("f_HT_prediction.root", "recreate")
+        self.ntuple.Write()
+        self.f_ntuple.Close()
         print("Processed" ,self.events_run)
         if not self.genfitTrack : self.kalman_tracks.Delete()
         else : pass
