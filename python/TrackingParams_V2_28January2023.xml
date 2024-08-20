@@ -14,7 +14,7 @@
 
   <!--  Tracks stored in genfit::Track format, value 1,
         or sndRecoTrack class, value 0  -->
-  <genfitTrack> 0 </genfitTrack>
+  <genfitTrack> 1 </genfitTrack>
   <!--  Enable option to visualize the polulated Hough space. Usefull for tests -->
   <draw> 0 </draw> 
   
@@ -227,7 +227,7 @@
      <mask_plane> 0 </mask_plane>
      <Nhits_per_plane> 4 </Nhits_per_plane>
      <!--  Maximum number of fitted tracks per event  -->
-     <max_reco_muons> 1 </max_reco_muons>
+     <max_reco_muons> 5 </max_reco_muons>
      <!--  Maximum absolute value of reconstructed angle 
            (+/- 1 rad is the maximum angle to form a triplet in the SciFi) -->
      <max_angle unit="rad"> 1. </max_angle>
@@ -239,7 +239,7 @@
      <tolerance unit="cm"> 1 </tolerance>
      <!-- Enable Gaussian smoothing of the Hough-space image.
           For 'ds' HT prediction, do a full accumulator smoothing. -->
-     <smooth_full> 0 </smooth_full>
+     <smooth_full> 1 </smooth_full>
      <!-- Gaussian filtering parameters. 
           The kernel size is determined as 2*int(truncate*sigma+0.5)+1. -->
      <sigma> 3 </sigma>

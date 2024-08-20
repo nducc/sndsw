@@ -718,6 +718,8 @@ class TrackSelector():
                 self.MonteCarlo = True
                 partitions = []
         rc = eventChain.GetEvent(0)
+        self.snd_geo.modules['Scifi'].InitEvent(eventChain.EventHeader)
+        self.snd_geo.modules['MuFilter'].InitEvent(eventChain.EventHeader)
 # start FairRunAna
         self.run  = ROOT.FairRunAna()
         ioman = ROOT.FairRootManager.Instance()
@@ -839,6 +841,9 @@ class TrackSelector():
 
    def Execute(self):
       for n in range(self.options.nStart,self.options.nStart+self.options.nEvents):
+
+          if n == self.options.nStart+self.options.nEvents-1:
+               self.muon_reco_task_DS.FinishTask()
 
           if self.options.scaleFactor > 1:
              if ROOT.gRandom.Rndm() > 1.0/self.options.scaleFactor: continue
