@@ -580,94 +580,54 @@ def loopEvents(
  if save: os.system("convert -delay 60 -loop 0 event*.png animated.gif")
 
 def addTrack(OT,scifi=False):
-   print(f"Entered the addTrack function")  # DEBUG
    xax = h['xz'].GetXaxis()
-   # nTrack = 0
-   nTrack = 1
-   # for   aTrack in OT.Reco_MuonTracks:
-   #    trackColor = ROOT.kRed
-   #    if aTrack.GetUniqueID()==1:
-   #        trackColor = ROOT.kBlue+2
-   #        flightDir = trackTask.trackDir(aTrack)
-   #        print('flight direction: %5.3F  significance: %5.3F'%(flightDir[0],flightDir[1]))
-   #    if aTrack.GetUniqueID()==3: trackColor = ROOT.kBlack
-   #    if aTrack.GetUniqueID()==11: trackColor = ROOT.kAzure-2 # HT scifi track
-   #    if aTrack.GetUniqueID()==13: trackColor = ROOT.kGray+2 # HT ds track
-   #    # HT cross-system track fit
-   #    if aTrack.GetUniqueID()==15: trackColor = ROOT.kOrange+7
-   #    S = aTrack.getFitStatus()
-   #    if not S.isFitConverged() and (scifi or (aTrack.GetUniqueID()==1 or aTrack.GetUniqueID()==11) ):# scifi trk object ids are 1 or 11(Hough tracking)
-   #       print('not converge')
-         # continue
-
-      
-   trackColor = ROOT.kGray+2 # HT ds track
-   for p in [0,1]:
-         h['aLine'+str(nTrack*10+p)] = ROOT.TGraph()
-
-   # run 4705 partition 9, event 3
-   hough_slopes = [0.08538812785388128, 0.005022831050228493]
-   hough_intercepts = [-59.81862481055815, 57.04469926977262]
-   z_planes = [492.83062744140625, 492.8431701660156, 516.5763549804688, 543.6548461914062]
-
-   # run 4705 partition 9, event 6
-   # hough_slopes = [0.005022831050228493, 0.005022831050228493]
-   # hough_intercepts = [-51.98835858146705, 53.01164141853295]
-   hough_slopes = [-0.095, 0.005022831050228493]
-   hough_intercepts = [-1.114, 53.01164141853295]
-   z_planes = [492.7803649902344, 492.7929382324219, 516.526123046875, 543.6046142578125]
-
-   # # run 4705 partition 9, event 9
-   # hough_slopes = [-0.06529680365296797, 0.045205479452054886]
-   # hough_intercepts = [8.427173955764658, 39.517995907293184]
-   # z_planes = [492.8682861328125, 492.880859375, 516.614013671875, 543.705078125]
-
-   # # run 4705 partition 9, event 10
-   # hough_slopes = [-0.045205479452054664, -0.005022831050228271]
-   # hough_intercepts = [-26.551053758532962, 66.9718296558471]
-   # z_planes = [492.8934020996094, 492.9059753417969, 516.614013671875, 516.6265869140625, 516.63916015625, 543.7176513671875]
-
-   # # run 4705 partition 9, event 20
-   # hough_slopes = [0.09543378995433804, -0.005022831050228271]
-   # hough_intercepts = [-120.1589783371285, 61.930507341797515]
-   # z_planes = [492.83062744140625, 492.8431701660156, 516.5637817382812, 516.5763549804688, 543.6422729492188]
-
-   # # run 4705 partition 1, event 28
-   # hough_slopes = [0.005022831050228493, 0.005022831050228493]
-   # hough_intercepts = [-47.95530073022738, 11.67279844332634]
-   # z_planes = [492.26544189453125, 492.27801513671875, 516.0156860351562, 543.0947875976562]
-
-
-   zEx = xax.GetBinCenter(1)
-   # mom    = aTrack.getFittedState().getMom()
-   # pos      = aTrack.getFittedState().getPos()
-   # lam      = (zEx-pos.z())/mom.z()
-   Ex        = [hough_slopes[0]*zEx + hough_intercepts[0],hough_slopes[1]*zEx + hough_intercepts[1]]
-   for p in [0,1]:   h['aLine'+str(nTrack*10+p)].SetPoint(0,zEx,Ex[p])
-
-   # for i in range(aTrack.getNumPointsWithMeasurement()):
-   #    state = aTrack.getFittedState(i)
-   # pos    = state.getPos()
-   for i, z in enumerate(z_planes):
+   nTrack = 0
+   for   aTrack in OT.Reco_MuonTracks:
+      trackColor = ROOT.kRed
+      if aTrack.GetUniqueID()==1:
+          trackColor = ROOT.kBlue+2
+          flightDir = trackTask.trackDir(aTrack)
+          print('flight direction: %5.3F  significance: %5.3F'%(flightDir[0],flightDir[1]))
+      if aTrack.GetUniqueID()==3: trackColor = ROOT.kBlack
+      if aTrack.GetUniqueID()==11: trackColor = ROOT.kAzure-2 # HT scifi track
+      if aTrack.GetUniqueID()==13: trackColor = ROOT.kGray+2 # HT ds track
+      # HT cross-system track fit
+      if aTrack.GetUniqueID()==15: trackColor = ROOT.kOrange+7
+      S = aTrack.getFitStatus()
+      if not S.isFitConverged() and (scifi or (aTrack.GetUniqueID()==1 or aTrack.GetUniqueID()==11) ):# scifi trk object ids are 1 or 11(Hough tracking)
+         print('not converge')
+         continue
       for p in [0,1]:
-            h['aLine'+str(nTrack*10+p)].SetPoint(i+1,z, hough_slopes[p]*z + hough_intercepts[p])
-      # print(f"z = {z}, y = {hough_slopes[1]*z + hough_intercepts[1]}, x = {hough_slopes[0]*z + hough_intercepts[0]}\n")
+          h['aLine'+str(nTrack*10+p)] = ROOT.TGraph()
 
-   zEx = xax.GetBinCenter(xax.GetLast())
-   # mom    = aTrack.getFittedState().getMom()
-   # pos      = aTrack.getFittedState().getPos()
-   # lam      = (zEx-pos.z())/mom.z()
-   Ex = [hough_slopes[0]*zEx + hough_intercepts[0],hough_slopes[1]*zEx + hough_intercepts[1]]
-   for p in [0,1]:   h['aLine'+str(nTrack*10+p)].SetPoint(i+2,zEx,Ex[p])
+      zEx = xax.GetBinCenter(1)
+      mom    = aTrack.getFittedState().getMom()
+      pos      = aTrack.getFittedState().getPos()
+      lam      = (zEx-pos.z())/mom.z()
+      Ex        = [pos.x()+lam*mom.x(),pos.y()+lam*mom.y()]
+      for p in [0,1]:   h['aLine'+str(nTrack*10+p)].SetPoint(0,zEx,Ex[p])
 
-   for p in [0,1]:
-            tc = h[ 'simpleDisplay'].cd(p+1)
-            h['aLine'+str(nTrack*10+p)].SetLineColor(trackColor)
-            h['aLine'+str(nTrack*10+p)].SetLineWidth(2)
-            h['aLine'+str(nTrack*10+p)].Draw('same')
-            tc.Update()
-            h[ 'simpleDisplay'].Update()
-   # nTrack+=1
+      for i in range(aTrack.getNumPointsWithMeasurement()):
+         state = aTrack.getFittedState(i)
+         pos    = state.getPos()
+         for p in [0,1]:
+             h['aLine'+str(nTrack*10+p)].SetPoint(i+1,pos[2],pos[p])
+
+      zEx = xax.GetBinCenter(xax.GetLast())
+      mom    = aTrack.getFittedState().getMom()
+      pos      = aTrack.getFittedState().getPos()
+      lam      = (zEx-pos.z())/mom.z()
+      Ex        = [pos.x()+lam*mom.x(),pos.y()+lam*mom.y()]
+      for p in [0,1]:   h['aLine'+str(nTrack*10+p)].SetPoint(i+2,zEx,Ex[p])
+
+      for p in [0,1]:
+             tc = h[ 'simpleDisplay'].cd(p+1)
+             h['aLine'+str(nTrack*10+p)].SetLineColor(trackColor)
+             h['aLine'+str(nTrack*10+p)].SetLineWidth(2)
+             h['aLine'+str(nTrack*10+p)].Draw('same')
+             tc.Update()
+             h[ 'simpleDisplay'].Update()
+      nTrack+=1
 
 def twoTrackEvent(sMin=10,dClMin=7,minDistance=1.5,sepDistance=0.5):
         trackTask.clusScifi.Clear()
@@ -751,9 +711,9 @@ def twoTrackEvent(sMin=10,dClMin=7,minDistance=1.5,sepDistance=0.5):
                else: 
                     tracks.append(theTrack)
            if len(tracks)==2:
-               OT = sink.GetOutTree()
-               OT.Reco_MuonTracks = tracks
-               addTrack(OT,True) 
+                 OT = sink.GetOutTree()
+                 OT.Reco_MuonTracks = tracks
+                 addTrack(OT,True) 
         return passed
 
 def drawDetectors():

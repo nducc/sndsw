@@ -85,8 +85,9 @@ def main():
     track_id = 0
     converged_tracks = 0
     good_tracks = 0
-    # Open file containing the tracks previously computed by SndlhcMuonReco.py
-    myFile = ROOT.TFile.Open("/eos/user/n/nduc/sndlhcsoftware/tracking3D/try_for_genfit_equal_1.root")
+    # Open file containing the tracks previously computed by running the tracking
+    # change filename and path accordingly
+    myFile = ROOT.TFile.Open("/path/to/file.root")
     # Check if the file is open
     if myFile.IsOpen():
         print("ROOT file opened successfully.")

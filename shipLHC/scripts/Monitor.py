@@ -767,9 +767,6 @@ class TrackSelector():
 
         self.outTree = eventChain.CloneTree(0)
         ROOT.gDirectory.pwd()
-
-        # genfitTrack variable setting by hand DEBUG
-        self.genfitTrack = 1
         
         # after track tasks init(), output track format is known
         if self.genfitTrack:
@@ -841,9 +838,6 @@ class TrackSelector():
 
    def Execute(self):
       for n in range(self.options.nStart,self.options.nStart+self.options.nEvents):
-
-          if n == self.options.nStart+self.options.nEvents-1:
-               self.muon_reco_task_DS.FinishTask()
 
           if self.options.scaleFactor > 1:
              if ROOT.gRandom.Rndm() > 1.0/self.options.scaleFactor: continue

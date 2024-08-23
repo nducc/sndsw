@@ -14,7 +14,7 @@
 
   <!--  Tracks stored in genfit::Track format, value 1,
         or sndRecoTrack class, value 0  -->
-  <genfitTrack> 1 </genfitTrack>
+  <genfitTrack> 0 </genfitTrack>
   <!--  Enable option to visualize the polulated Hough space. Usefull for tests -->
   <draw> 0 </draw> 
   
@@ -227,7 +227,7 @@
      <mask_plane> 0 </mask_plane>
      <Nhits_per_plane> 4 </Nhits_per_plane>
      <!--  Maximum number of fitted tracks per event  -->
-     <max_reco_muons> 5 </max_reco_muons>
+     <max_reco_muons> 1 </max_reco_muons>
      <!--  Maximum absolute value of reconstructed angle 
            (+/- 1 rad is the maximum angle to form a triplet in the SciFi) -->
      <max_angle unit="rad"> 1. </max_angle>
@@ -299,4 +299,3 @@
   </tracking_case>
 
 </TrackingParams>
-
